@@ -1,0 +1,858 @@
+---
+title: "Project Report"
+author: "Leonard Philippossian, David Pitteloud"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+ rmdformats::readthedown:
+    css: custom.css
+    self_contained: true
+    toc_depth: 3
+bibliography: bibliography.bibtex
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+# This is the library section, where all the libraries required for this document are loaded
+
+library("here")
+library("kableExtra")
+library("keras")
+library("ggpubr")
+library("plotly")
+library("plot.matrix")
+library("reticulate")
+library("readr")
+library("tfruns")
+library("tibbletime")
+library("tidyquant")
+library("tidyverse")
+```
+
+
+# Introduction
+
+We are both passionate about new technologies. We have been thrilled to observe the emergence of the blockchain and cryptocurrency, especially in 2018 when the most famous cryptocurrency, the bitcoin, reached its peak.
+
+Just to summarise very quickly, the blockchain is an emerging technology used to stock and communicate information without any controlling actor, totally decentralised. More technically, it is a database from which information that is transmitted is verified across blocks that form a chain. The security of such a system is ensured by cryptography. Cryptocurrency emerges from the blockchain.
+
+
+We think and that this technology is very promising and therefore we decided to invest our meagre student's savings into a diversified portfolio of cryptocurrency. So far, unfortunately, we have been unsuccessful in our investments. We want to increase our performance by finding a way to predict the price of the cryptocurrency. We are conscious that predicting the future price of an asset is not an unexplored field, and only very few or maybe none have been successful in this task. Instead of going in the traditional path of forecasting, we decided to use deep learning to achieve our own ends.
+
+The motivation behind this project is for us to do better at trading, as so far, we are unfortunately not performing well. We hope that the model we will create in this project will improve our poor capability in terms of decision making. 
+
+
+
+
+## Objectives 
+
+The objective is to use a deep convolutional network to try to predict crypto-asset price trend. Two general approaches will be tried first to feed the Neural network directly with graph charts, the second to feed the neural network with preprocessed images grid which may be more machine-readable.
+
+As said earlier, our final objective is to predict the price direction of an asset by using Deep Learning. Nevertheless, beforehand, we must be sure that the neural network can *at least* read what is on the chart. Thus, the first objective for the neural network will be to detect if the price trend up or down in the image. 
+
+We had this idea of using convolutional neural network because most traders (even the very successful one) use charts to predict the future price. Their decision is often based on instinct. One of the key advantages of deep learning and data use in general is that we will be able to create a model that will be able to take in account a large number of graphs, more than a human being could memorise. So we thought instead of relying on the instinct that gave us poor results, we may perhaps find hidden patterns in charts that could be extracted using convolutional neural network.
+
+## Research Question
+
+Our research question would be formally enacted as follow: To what extent a convolutional neural network is able to predict price trend from graphs?
+
+## Problem
+
+Globally, the main problem is that stock price is not something easily predictable, and many people have tried to predict it with no success. There is very high volatility, and it depends on so many socio-economic factors, that even an exogenous event can disturb the price.
+
+Then we may face practical issues such as for example, how are we going to build our graphs and how will we represent them?
+
+
+## Previous analysis
+
+As it will be two-dimension images classifications, it is very likely that we will use convolutional neural networks.
+
+The first question we asked our selves is how feasible it is to predict stock price. From a traditional perspective, many studies have tried to find results, and apparently, it seems possible to have a decent accuracy around 80% with not dealing with to much overfitting [@leung, p . 277]. More globally machine learning has been used in different financial sectors successfully, such as portfolio selection or credit evaluation [@chen, p . 87]
+
+
+Using this non-conventional approach, some scholars have already found some consistent outcome. Even if results may sound promising, there is no guarantee that this approach is the correct way to predict stock price [@sezer, p . 14].
+
+
+
+# Data
+
+```{r,  echo=FALSE, warning=FALSE, message=FALSE}
+# Import the dataset 
+
+load(here::here("data/btc.Rdata"))
+
+# Convert the time format 
+btc$Timestamp <- as.POSIXct(btc$Timestamp, origin="1970-01-01") %>% na.omit()
+
+
+for(i in 2:ncol(btc)){
+  btc[is.nan(btc[,i][[1]]),i] <- NA
+}
+
+# Rename columns and remove missing values
+
+btc <- btc %>% 
+  dplyr::rename(time = Timestamp, volume_btc = `Volume_(BTC)`,volume_usd = `Volume_(Currency)`) %>% 
+  drop_na()
+
+# Remove capital letters
+
+colnames(btc) <- tolower(colnames(btc))
+
+#transform to hourly data instead of daily
+
+btc_hourly <- btc %>%
+  as_tbl_time(time) %>%
+  mutate(time = collapse_index(time, "hourly")) %>%
+  group_by(time) %>%
+  summarise(
+    open   = first(open),
+    high   = max(high),
+    low    = min(low),
+    close  = last(close),
+    volume_usd = sum(volume_usd))
+
+btc_hourly$time <- as.POSIXct(droplevels(cut(btc_hourly$time, breaks="hour")))
+
+
+
+```
+
+
+Our final dataset represents the bitcoin hourly price between `r btc_hourly$time[1]` and `r btc_hourly$time[length(btc_hourly$time)]` from the *coinbase* exchange platform. Coinbase being the most important crypto exchange, its price represents relatively accurately the real price of bitcoin (may have serious divergence during high volatility spike). The initial data set gave the price by minutes but for convenience and to reduce the noise, and we transformed it into hourly data. 
+
+The dataset was obtained from a friend that collects many exchange live data-feed through their API. Originally it was in a CSV format but to be able to upload it, and we transformed it in a .Rdata file. 
+
+
+As mentioned above, the first step to clean the data was to transform the data from minutes to hourly measurements. After the transformation, the dataset looks as follow :
+
+```{r,  echo=FALSE, warning=FALSE, message=FALSE}
+
+# Create a table to present the dataset
+kable(head(btc_hourly)) %>%
+  kable_styling()
+
+```
+
+Here are short explanations to describe each variable:
+
+- **Time**: The time at when the data were collected
+- **Open**: The first price recorded for the time period
+- **High**: The highest price reached during the given time lapse
+- **Low**: The lowest price reached during the given time lapse
+- **Close**: The last price recorder for the time period
+- **Volume_usd**: The bitcoin value exchanged during this observation, denominated in USD
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#set indicators
+
+fib <- c(5,8,13,21,34,55,144)
+  
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close, mutate_fun = EMA ,n=i ,col_rename = paste0("EMA.",i)) 
+}
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  =  close, mutate_fun = SMA,n=i ,col_rename = paste0("SMA.",i)) 
+}
+
+
+for(i in fib){
+ btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close, mutate_fun = RSI, n = i ,col_rename = paste0("RSI.",i))
+}
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close, mutate_fun = VWAP ,n=i, volume = btc_hourly$volume_usd ,col_rename = paste0("VWAP.",i))
+}
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close, mutate_fun = MACD ,
+            nFast = i,
+            nSlow = i+14,
+            nSig = i-3,
+            col_rename = paste0("MACD.",i))
+}
+
+for(i in c(1,fib[-length(fib)])){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close, mutate_fun = momentum ,n=i,col_rename = paste0("momentum.",i))
+}
+
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(mutate_fun = ADX ,n=i ,col_rename = paste0("ADX.",i))
+}
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close,mutate_fun = SMI ,n=i ,col_rename = paste0("SMI.",i))
+}
+
+
+for(i in fib){
+  btc_hourly <- btc_hourly %>%
+  tq_mutate(select  = close,mutate_fun = ALMA ,n=i ,col_rename = paste0("SMI.",i))
+}
+
+
+btc_hourly <- btc_hourly %>%
+  tq_mutate(mutate_fun = williamsAD ,col_rename = paste0("williamsAD"))
+
+
+btc_hourly <- btc_hourly %>% na.omit()
+
+
+
+```
+
+Then we quickly realised it was going to be enough information to build a solid model, so we had to generate some price indicators:
+
+- **EMA**: Exponential Moving Average
+- **SMA**: Smooth Moving Average
+- **RSI**: Relative Strength Index 
+- **VWAP**: Volume-Weighted Average Price 
+- **MCAD**: Moving Average Convergence Divergence
+- **Momentum**: Momentum
+- **ADX**: Directional Movement Index
+- **SMI**: Stochastic Momentum Index
+- **ALMA**: Arnaud Legoux Moving Averages
+- **WilliamsAD**: Williams Accumulation Distribution
+
+Those indicators are the most commonly used by traders to make a trading decision. Thus we thought that it would be essential for the model to obtain those pieces of information as well. 
+
+From this structured numeric data, we will create different charts. 
+
+
+
+# Methodology
+
+As we said before, in this project, we will use an out-of-the-box perspective to forecast stock prices. We will use a convolutional neural network to predict future price direction. There are three different results, which are :
+- buy
+- hold 
+- sell
+
+In this project, we will proceed with two different approaches. The first approach consists in generating price graph, as we tend to observe when we do trading, that we will give to the convolutional neural network as such to make predictions. The second, inspired by the paper of Sezer [@sezer], consists of generating grids, a more abstract way to represent price, that we will give to the convolutional neural network as such to make predictions.
+
+## Overfitting 
+
+Overfitting occurs when the model to learn unique per-observation features in the training data to reduce cost function, but this reduces the model's ability to predict over new data. Diverse methods exist to prevent overfitting such as early-stopping, regulariser, or dropout. The most common solution is the early stop. Briefly speaking, the early stop will stop the training when the predicting ability starts to lower. Moreover, dropout is also an excellent way to prevent overfitting, as it provides a way to approximate the effect of joining several neural networks. Finally, making the average of results of the predictions of various models is a good way to regularise a model.
+
+# Model
+
+A deep convolutional network will be used to analyse those graphs. We will try to optimise the model parameters by **first** trying to teach the model to read the model. To do so, we will ask the model if it can detect whether the price $T_i$ is a lot higher, about the same or lower than the price $T_{i-x}$. The model with the best accuracy will be used to predict the future price. Images will be feed to the model in an orderly manner (shuffle = FALSE) to avoid over-confidence over results.  
+
+The ReLu activation function will be used because it is the most common, and we will try to tune the number of filter, the regulariser L1 and L2 and the percentage of dropout. 
+
+The architecture of the neural network will be slightly different. For the first approach will use six convolutional layers, because we hope that the model will be able to capture some information from the plotted chart. For the second approach, only two convolutional layers will be used because the data is given in a more straight-forward manner. 
+
+
+
+# First Approach: Graph plot
+
+## Plots
+
+For the first approach, we will create plots from the indicators we have generated in the above dataset. Plots generated to feed the model must be standardised as much as possible. To do so, instead of plotting the price directly (That vary widely), we decided to plot the percentage change between $T-i$ and $T$. To obtain the differential between two observation, we made the log difference as such:
+
+$$Price\_change_i  = log(price_i)-log(price_{i-1})$$
+
+But change between two periods is random, and it is hardly readable on a chart when plotted over a certain time frame. Thus to the plot, we then did the cumulative sum of $price\_change$ between $T-i$ and $T$. That way, we can have standardised charts that also keeps most price change pieces of information.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+btc_hourly$log_returns <- c(0,diff(log(btc_hourly$close), lag=1))
+
+##take derivative
+btc_hourly$log_returns_EMA_13 <- c(0,diff(log(btc_hourly$EMA.13), lag=1))
+btc_hourly$log_returns_EMA_55 <- c(0,diff(log(btc_hourly$EMA.55), lag=1))
+btc_hourly$log_returns_EMA_144 <- c(0,diff(log(btc_hourly$EMA.144), lag=1))
+
+
+btc_hourly <- btc_hourly %>% na.omit()
+
+```
+
+
+We also decided that each frame will be composed of 6 graphs: 
+- One week price 
+- Three months price 
+- Exponential Moving Average calculated over 13, 55, 144 hours
+- RSI calculated over the last 13 hours 
+
+The final result looks like this: 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+ret <- btc_hourly$log_returns[(i*24):(i*24+168)]
+  ret <- cumsum(ret)
+
+  ret_long <- btc_hourly$log_returns_EMA_13[round(seq(ifelse(i*24<2160,1,i*24-2159), (i*24+168), length.out = 169))]
+  ret_long <- cumsum(ret_long)
+  
+  EMA144 <- btc_hourly$log_returns_EMA_144[(i*24):(i*24+168)]
+  EMA144 <- cumsum(EMA144)
+  
+  EMA55 <- btc_hourly$log_returns_EMA_55[(i*24):(i*24+168)]
+  EMA55 <- cumsum(EMA55)
+  
+  EMA13 <- btc_hourly$log_returns_EMA_13[(i*24):(i*24+168)]
+  EMA13 <- cumsum(EMA13)
+  
+  RSI13 <- btc_hourly$RSI.13[(i*24):(i*24+168)]/100
+
+  
+# Peut être faire un graph a 4 petits graphs? 
+ a <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA144), color = "green",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA144)), max(abs(EMA144)))+
+    theme_void()
+
+
+b <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA55), color = "blue",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA55)), max(abs(EMA55)))+
+    theme_void()
+
+c <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA13), color = "red",size=5, alpha =0.7) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA13)), max(abs(EMA13)))+
+    theme_void()
+
+d <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret_long),color = "yellow",size=5, alpha =0.7)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret_long)), max(abs(ret_long)))+
+    theme_void()
+
+e <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret),size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret)), max(abs(ret)))+
+    theme_void()
+
+f <- ggplot()+
+    geom_line(aes(1:length(ret),y = RSI13),color = "brown",size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(RSI13)), max(abs(RSI13)))+
+    theme_void()
+
+ggarrange(a,b,c,d,e,f)
+
+
+```
+
+Just to be clearer, it is important to describe what each curve represents.
+
+- Green: Exponential Moving Average calculated over 144 hours
+- Blue: Exponential Moving Average calculated over 55 hours
+- Red: Exponential Moving Average calculated over 13 hours
+- Yellow: Three months price
+- Black: One-week price 
+- Brown: RSI calculated over the last 13 hours
+
+## Methods 
+
+Any neural network must be tune before considered optimal. To better tune our model, we decided first to be sure that the neural network can read optimally what is actually in the chart. Hence we first classified the plots depending on current price action. If the price rises more than 2% during the last seven days it will be classified as buy, if it shrank by more than 2%, sell, and in between as hold. 
+
+When the best model with this approach is found, we reclassify the images now depending on the future price trend to evaluate the predicting ability of the model. 
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+# This chunk is very long to run as it creates images. be careful to create the necessary folder before running it 
+
+buy_signal <- NULL
+sell_signal <- NULL
+hold_signal <- NULL
+for (i in 1:(nrow(btc_hourly)/12)) {
+
+  ret <- btc_hourly$log_returns[(i*12):(i*12+168)]
+  ret <- cumsum(ret)
+
+  ret_long <- btc_hourly$log_returns_EMA_13[round(seq(ifelse(i*12<2160,1,i*12-2159), (i*12+168), length.out = 169))]
+  ret_long <- cumsum(ret_long)
+  
+  EMA144 <- btc_hourly$log_returns_EMA_144[(i*12):(i*12+168)]
+  EMA144 <- cumsum(EMA144)
+  
+  EMA55 <- btc_hourly$log_returns_EMA_55[(i*12):(i*12+168)]
+  EMA55 <- cumsum(EMA55)
+  
+  EMA13 <- btc_hourly$log_returns_EMA_13[(i*12):(i*12+168)]
+  EMA13 <- cumsum(EMA13)
+  
+  RSI13 <- btc_hourly$RSI.13[(i*12):(i*12+168)]/100
+  
+# Create graphs with one indicator
+ a <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA144), color = "green",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA144)), max(abs(EMA144)))+
+    theme_void()
+
+
+b <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA55), color = "blue",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA55)), max(abs(EMA55)))+
+    theme_void()
+
+c <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA13), color = "red",size=5, alpha =0.7) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA13)), max(abs(EMA13)))+
+    theme_void()
+
+d <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret_long),color = "yellow",size=5, alpha =0.7)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret_long)), max(abs(ret_long)))+
+    theme_void()
+
+e <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret),size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret)), max(abs(ret)))+
+    theme_void()
+
+f <- ggplot()+
+    geom_line(aes(1:length(ret),y = RSI13),color = "brown",size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(RSI13)), max(abs(RSI13)))+
+    theme_void()
+
+  ggpubr::ggarrange(a,b,c,d,e,f)
+  #geom_line(aes(1:length(ret),ret),size=15)+
+  #delet directories before new run: rm /Users/leo/documents/github/deepl_trading/plot/**/*.*
+  
+  if(i <= (nrow(btc_hourly)/12)*0.8){
+    if(sum(btc_hourly$log_returns[(i*12):(i*12+168)])>= 0.02){
+      buy_signal <- c(buy_signal,TRUE)
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/train/buy"), dpi = 28) 
+    } else if(sum(btc_hourly$log_returns[(i*12):(i*12+168)])<= -0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/train/sell"), dpi = 28) 
+      sell_signal <- c(sell_signal,TRUE)
+    } else{
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/train/hold"), dpi = 28) 
+      hold_signal <- c(hold_signal,TRUE)
+    }
+  }else{
+    if(sum(btc_hourly$log_returns[(i*12):(i*12+168)])>= 0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/test/buy"), dpi = 28)
+      buy_signal <- c(buy_signal,TRUE)
+    } else if(sum(btc_hourly$log_returns[(i*12):(i*12+168)])<= -0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/test/sell"), dpi = 28) 
+      sell_signal <- c(sell_signal,TRUE)
+    } else{
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/test/hold"), dpi = 28) 
+      hold_signal <- c(hold_signal,TRUE)
+    }
+  }
+}
+
+
+
+```
+
+## Results 
+
+After some optimisation here are the results of the best training runs:
+
+```{r,  eval=FALSE ,echo=FALSE, warning=FALSE, message=FALSE}
+runs <- ls_runs(runs_dir = here::here("runs/model_with_graph/"))
+
+run <- runs %>%
+  select(metric_loss, metric_val_accuracy, flag_L1, 
+         flag_L2,flag_dropout1,flag_dropout2,flag_dropout3,flag_filter1,flag_filter2) %>%       arrange(desc(metric_val_accuracy))
+
+save(run , file = "saved_table/run_graph.rda")
+```
+
+```{r ,echo=FALSE, warning=FALSE, message=FALSE}
+load(file = "saved_table/run_graph.rda")
+kable(head(run)) %>%
+  kable_styling()
+
+```
+
+One can see that the best model can reach `r max(run$metric_val_accuracy, na.rm = T)`%. Which means the model can read the trend plotted with such accuracy. Those tunning parameters will be used for the final model. 
+
+
+Now images will be classified into three different categories: buy, sell or hold. It depends on the future price action. If the price rises more than 2% during the next 12 hours it will be classified as buy, if it shrank by more than 2%, sell, and in between as hold. 
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+
+buy_signal <- NULL
+sell_signal <- NULL
+hold_signal <- NULL
+buy_signal_test <- NULL
+sell_signal_test <- NULL
+hold_signal_test <- NULL
+
+
+for (i in 1:(nrow(btc_hourly)/12)) {
+
+  ret <- btc_hourly$log_returns[(i*12):(i*12+168)]
+  ret <- cumsum(ret)
+
+  ret_long <- btc_hourly$log_returns_EMA_13[round(seq(ifelse(i*12<2160,1,i*12-2159), (i*12+168), length.out = 169))]
+  ret_long <- cumsum(ret_long)
+  
+  EMA144 <- btc_hourly$log_returns_EMA_144[(i*12):(i*12+168)]
+  EMA144 <- cumsum(EMA144)
+  
+  EMA55 <- btc_hourly$log_returns_EMA_55[(i*12):(i*12+168)]
+  EMA55 <- cumsum(EMA55)
+  
+  EMA13 <- btc_hourly$log_returns_EMA_13[(i*12):(i*12+168)]
+  EMA13 <- cumsum(EMA13)
+  
+  RSI13 <- btc_hourly$RSI.13[(i*12):(i*12+168)]/100
+  
+# Create 4 graphs
+ a <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA144), color = "green",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA144)), max(abs(EMA144)))+
+    theme_void()
+
+
+b <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA55), color = "blue",size=5, alpha =0.8) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA55)), max(abs(EMA55)))+
+    theme_void()
+
+c <- ggplot()+
+    geom_line(aes(1:length(ret),y = EMA13), color = "red",size=5, alpha =0.7) +
+    xlim(0, 168)+
+    ylim(-max(abs(EMA13)), max(abs(EMA13)))+
+    theme_void()
+
+d <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret_long),color = "yellow",size=5, alpha =0.7)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret_long)), max(abs(ret_long)))+
+    theme_void()
+
+e <- ggplot()+
+    geom_line(aes(1:length(ret),y = ret),size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(ret)), max(abs(ret)))+
+    theme_void()
+
+f <- ggplot()+
+    geom_line(aes(1:length(ret),y = RSI13),color = "brown",size=5)+
+    xlim(0, 168)+
+    ylim(-max(abs(RSI13)), max(abs(RSI13)))+
+    theme_void()
+
+  ggpubr::ggarrange(a,b,c,d,e,f)
+  #geom_line(aes(1:length(ret),ret),size=15)+
+  #delet directories before new run: rm /Users/leo/documents/github/deepl_trading/plot/**/*.*
+  
+  if(i <= (nrow(btc_hourly)/12)*0.8){
+    if(sum(btc_hourly$log_returns[(i*12+169):(i*12+169+12)])>= 0.02){
+      buy_signal <- c(buy_signal,TRUE)
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/train/buy"), dpi = 28) 
+    } else if(sum(btc_hourly$log_returns[(i*12+169):(i*12+169+12)])<= -0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/train/sell"), dpi = 28) 
+      sell_signal <- c(sell_signal,TRUE)
+    } else{
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/train/hold"), dpi = 28) 
+      hold_signal <- c(hold_signal,TRUE)
+    }
+  }else{
+    if(sum(btc_hourly$log_returns[(i*12+169):(i*12+169+12)])>= 0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/test/buy"), dpi = 28)
+      buy_signal_test <- c(buy_signal_test,TRUE)
+    } else if(sum(btc_hourly$log_returns[(i*12+169):(i*12+169+12)])<= -0.02){
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/test/sell"), dpi = 28) 
+      sell_signal_test <- c(sell_signal_test,TRUE)
+    } else{
+      ggsave(paste0("plot",i,".jpg"), path = here::here("data/plot/final_plot/test/hold"), dpi = 28) 
+      hold_signal_test <- c(hold_signal_test,TRUE)
+    }
+  }
+}
+
+
+```
+
+For the final classification, it is important to note that the hold category represents 70% of the observations, so any results less than that will be meaningless. 
+
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+training_run(file = here::here("scripts/cnn_test.R"))
+
+```
+
+
+Using the tuning of the best reading-chart model, we fit this model on the newly classified images. And here are the results with the testing set of the newly generated images: 
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+generator <- image_data_generator(rescale = 1/255)
+
+testing_generator <- flow_images_from_directory(
+    directory = here::here("data/plot/final_plot/test/"),
+    generator = generator,
+    target_size = c(28, 28),
+    batch_size = 8,
+    subset = "training"
+)
+
+results <- load_model_hdf5(here::here("results/model_graph_final.hdf5"), compile = TRUE) %>% evaluate_generator(generator = testing_generator, steps = testing_generator$n)
+
+results <- tibble(loss = results$loss,
+       accuracy = results$accuracy)
+
+save(results, file = "saved_table/results_graph.rda")
+
+```
+
+```{r,  echo=FALSE, warning=FALSE, message=FALSE}
+load(file= "saved_table/results_graph.rda") 
+
+results <- tibble(loss = results$loss,
+       accuracy = results$accuracy)
+
+results %>% kable() %>% 
+  kable_styling()
+
+```
+One can see that the final model perform poorly and is not really able to predict future price direction. 
+
+
+# Second part: Grid charts
+
+For this part, we will plot charts in a more abstract manner, maybe more usable for deep learning models. The part was inspired by Sezer's paper [@sezer].
+
+First, all columns must be normalised between 0 and 1.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+norm_fun <- function(x){
+  norm_x <- (x-min(x))/(max(x)-min(x))
+  return(norm_x)
+}
+
+log_returns <- btc_hourly$log_returns
+btc_hourly <- btc_hourly[,!grepl("log", colnames(btc_hourly))]
+
+for(i in 2:ncol(btc_hourly)){
+  btc_hourly[,i] <- norm_fun(btc_hourly[,i])
+}
+
+```
+
+
+## Plot
+
+Then let's generate pictures classified depending past price action to find the best tune for the final model. The 15x15 grid includes all generated indicators at time $T$ and a vector of average price between $T_{i-100}$ and $T_i$. 
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+data_all <- NULL
+train_y <- NULL
+test_y <- NULL
+
+for (i in 22:(nrow(btc_hourly)/12)) {
+  
+  
+  data <- btc_hourly[i*12, 2:ncol(btc_hourly)] %>%
+    unlist(use.names = FALSE)
+  
+  data <- c(btc_hourly$EMA.5[(i*12-(224-length(data))):(i*12)], data)
+  
+  if(length(data)!= 225){
+    break
+  }
+  
+  data_all <- c(data_all, data)
+  
+  if(i <= (nrow(btc_hourly)/12)*0.8){
+  if (sum(log_returns[(i*12-12):(i*12)]) >= 0.02) {
+    train_y <- c(train_y, "buy")
+  } else if (sum(log_returns[(i*12-12):(i*12)]) <= -0.02) {
+    train_y <- c(train_y, "sell")
+  } else{
+    train_y <- c(train_y, "hold")
+  }}else{
+    if (sum(log_returns[(i*12-12):(i*12)]) >= 0.02) {
+    test_y <- c(test_y, "buy")
+  } else if (sum(log_returns[(i*12-12):(i*12)]) <= -0.02) {
+    test_y <- c(test_y, "sell")
+  } else{
+    test_y <- c(test_y, "hold")
+  }
+}
+}
+
+
+train_x <- array_reshape(data_all[1:(length(train_y)*225)], dim = c(length(train_y),15,15,1))
+
+test_x <- array_reshape(data_all[1:(length(test_y)*225)], dim = c(length(test_y),15,15,1))
+
+train_y <- ifelse(train_y=="buy",0,ifelse(train_y =="sell",1,2))
+test_y <- ifelse(test_y=="buy",0,ifelse(test_y =="sell",1,2))
+
+plot(train_x[588,,,])
+```
+Here is an example grid fed to the model. It's important to note that only matrix values will be fed and not the graph as such.
+
+## Methods 
+
+We will do the same method as the first approach. First, find the best tune by reading the chart and the fit the model with the best tune on future price direction. 
+
+## Results
+
+After tuning here are the results: 
+
+```{r, eval=FALSE,echo=FALSE, warning=FALSE, message=FALSE}
+
+runs <- ls_runs(runs_dir = here::here("runs/model_with_grid/"))
+
+run <- runs %>%
+  select(metric_loss, metric_val_accuracy, flag_L1, 
+         flag_L2,flag_dropout1,flag_filter1,flag_filter2,flag_kernel_size1,flag_kernel_size2) %>% arrange(desc(metric_val_accuracy))
+
+
+save(run, file  = "saved_table/run_grid.rda")
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+load( file  = "saved_table/run_grid.rda")
+
+
+run %>% tibble() %>% 
+  head() %>% 
+  kable() %>% 
+  kable_styling()
+```
+At first glance results of the gird search are really disappointing with an accuracy of only 65%, which mean that the deep learning model is not even able to read well the grid. But anyway let's go further and thy to see whether or not it can predict future trend using the best tune here. 
+
+
+```{r,  echo=FALSE, warning=FALSE, message=FALSE}
+
+
+data_all <- NULL
+train_y <- NULL
+test_y <- NULL
+
+for (i in 22:(nrow(btc_hourly)/12)) {
+  
+  
+  if(is.na(sum(log_returns[(i*12+1):(i*12+12)]))){
+   break 
+  }
+
+  data <- btc_hourly[i*12, 2:ncol(btc_hourly)] %>%
+    unlist(use.names = FALSE)
+  
+  data <- c(btc_hourly$EMA.5[(i*12-(224-length(data))):(i*12)], data)
+  
+  if(length(data)!= 225){
+    break
+  }
+  
+  data_all <- c(data_all, data)
+  
+  if(i <= (nrow(btc_hourly)/12)*0.8){
+  if (sum(log_returns[(i*12+1):(i*12+12)]) >= 0.02) {
+    train_y <- c(train_y, "buy")
+  } else if (sum(log_returns[(i*12+1):(i*12+12)]) <= -0.02) {
+    train_y <- c(train_y, "sell")
+  } else{
+    train_y <- c(train_y, "hold")
+  }}else{
+    if (sum(log_returns[(i*12+1):(i*12+12)]) >= 0.02) {
+    test_y <- c(test_y, "buy")
+  } else if (sum(log_returns[(i*12+1):(i*12+12)]) <= -0.02) {
+    test_y <- c(test_y, "sell")
+  } else{
+    test_y <- c(test_y, "hold")
+  }
+}
+}
+
+
+train_x <- array_reshape(data_all[1:(length(train_y)*225)], dim = c(length(train_y),15,15,1))
+test_x <- array_reshape(data_all[1:(length(test_y)*225)], dim = c(length(test_y),15,15,1))
+
+train_y <- ifelse(train_y=="buy",0,ifelse(train_y =="sell",1,2))
+test_y <- ifelse(test_y=="buy",0,ifelse(test_y =="sell",1,2))
+
+```
+
+
+```{r, eval =FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+
+training_run(file = here::here("scripts/cnn2_test.R"))
+
+
+```
+
+
+```{r, eval =FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+
+results <- load_model_hdf5(here::here("results/model_grid_final.hdf5"), compile = TRUE) %>% evaluate(test_x, test_y)
+
+
+save(results, file= "saved_table/results_grid.rda")
+
+```
+
+```{r,  echo=FALSE, warning=FALSE, message=FALSE}
+load(file= "saved_table/results_grid.rda")
+
+results <- tibble(loss = results$loss,
+       accuracy = results$accuracy)
+
+results %>% 
+  kable() %>% 
+  kable_styling()
+
+
+```
+
+At first glance, results seem not bad but in fact `r sum(test_y==2)/length(test_y)`% of the testing observations are classified as hold, which means the model simply predict all as a hold. Thus we can say that the second model also doesn't work.
+
+
+
+
+
+
+
+
+
+
+
+# Conclusion 
+
+Why such a fiasco? For the first approach, the biggest issue is that the images had a too low resolution to give enough information to the model as the model could not even read the chart with a 100% accuracy. But the higher resolution would have been difficult with our computational power. A second reason is that, simply, this approach is maybe too complicated to implement rightly. 
+
+For the second approach, bad results are a bit more surprising, especially in the initial part, where we ask the model just to read the information on the grid. Maybe the normalisation was not done right, indicators used were not right or that there is a mistake in the model implementation.
+
+It's especially strange knowing the paper from which we took inspiration did pretty good result with such an approach. But it is important to note that in their article they also made a big mistake that may make the model over-optimistic: the labelling of the observation was done by hand and not following a strict rule as we did here. 
+
+
+# References
+
+
+
+
+
+

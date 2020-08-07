@@ -1,0 +1,173 @@
+#table-of-contents {
+    background: #0D1F2E;
+    color: #ffffff;
+    border: #0D1F2E;
+    margin: #0D1F2E;
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex-grow: 200;
+}
+
+#sidebar h2 {
+    z-index: 200;
+    background-color: #0D1F2E;
+    text-align: center;
+    padding: 0.809em;
+    display: block;
+    color: #ffffff;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+    margin :#0D1F2E;
+    border :#0D1F2E;
+}
+
+
+#postamble {
+    color: #ffffff;
+    background: #0D1F2E;
+    border-top: solid 10px #0D1F2E;
+    font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+    font-size: 90%;
+    z-index: 400;
+    padding: 12px;
+}
+
+
+#content {
+    background: #0D1F2E;
+    border: #0D1F2E;
+    color: #ffffff;
+    margin:#0D1F2E !important;
+    height: 100%;
+    margin-left: 300px;
+    margin-right: 0px !important;
+    max-width: 900px;
+    min-height: 100%;
+}
+
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: "Roboto Slab","ff-tisa-web-pro","Georgia",Arial,sans-serif;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+pre {
+    display: block;
+    padding: 9.5px;
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.42857143;
+    color: #ffffff;
+    word-break: break-all;
+    word-wrap: break-word;
+    background-color: #000000;
+    border: 1px solid #000000;
+    border-radius: 4px;
+    margin:#000000;
+}
+
+#content pre {
+    border: 1px solid #000000;
+    color : #ffffff;
+    line-height: 1.5;
+    margin-bottom: 24px;
+    margin: #000000;
+    overflow: auto;
+    padding: 12px;
+    white-space: pre;
+    word-wrap: normal;
+    word-break: normal;
+}
+
+
+#content pre code {
+    font-family: Monaco,Consolas,"Andale Mono WT","Andale Mono","Lucida Console","Lucida Sans Typewriter","DejaVu Sans Mono","Bitstream Vera Sans Mono","Liberation Mono","Nimbus Mono L","Courier New",Courier,monospace;
+    border: #000000;
+    background: #000000;
+    color:#ffffff;
+    font-size: 100%;
+    white-space: pre;
+}
+
+
+#sidebar {
+    position: fixed;
+    top: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #0D1F2E;
+    z-index: 200;
+    font-size: 16px;
+}
+
+html,body {
+    margin:0;
+    padding:0;
+}
+
+html {
+    font-size: 10px;
+    -webkit-tap-highlight-color: #0D1F2E;
+}
+
+body {
+    background: #0D1F2E;
+    color: #ffffff;
+    font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+    font-weight: normal;
+    margin: 0;
+    min-height: 100%;
+    overflow-x: hidden;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 1.8em;
+    background :#0D1F2E;
+}
+
+.table>tbody>tr>td, .table>tbody>tr>th, .table>tfoot>tr>td, .table>tfoot>tr>th, .table>thead>tr>td, .table>thead>tr>th {
+    padding: 8px;
+    line-height: 1.42857143;
+    vertical-align: top;
+    border-top: 1px solid #ddd;
+    background :#0D1F2E;
+}
+
+
+#table-of-contents h2 {
+    z-index: 200;
+    background-color: #0D1F2E;
+    text-align: center;
+    padding: 0.809em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+
+
+span[id*='MathJax-Span'] {
+    color: #fcfcfc;
+}
+
+
+
+table td, table th {
+    font-size: 90%;
+    margin: 0;
+    overflow: visible;
+    padding: 8px 16px;
+    border: 1px solid #fcfcfc;
+    background:#0D1F2E;
+    color:#fcfcfc;
+}
+
+table tr:nth-child(2n-1) td {
+    background-color: #0D1F2E;
+    color:#fcfcfc;
+}
