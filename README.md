@@ -1,5 +1,5 @@
-# projg04
-Deep Learning, Project, Group 4
+# Deep Learning
+Deep Learning, Project in collaboration with Beaudelair
 
 
 **Please read the README**
